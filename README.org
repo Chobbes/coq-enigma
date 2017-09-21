@@ -1,0 +1,9 @@
+* Introduction
+
+  It's the 1930's and the Enigma is one of the top of the line methods
+  of encrypting vital war-time information.
+
+  So, naturally, you want to formally verify the Enigma protocol.
+
+  This is a formalization of some of the properties of Enigma machines
+  in Coq. Because that's what you would do in a world war.
