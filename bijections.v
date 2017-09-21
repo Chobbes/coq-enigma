@@ -10,6 +10,10 @@ Definition injective {A B : Type} (f : A -> B) :=
   forall (a1 a2 : A), f a1 = f a2 -> a1 = a2.
 
 
+Definition left_inverse {A B : Type} (f : A -> B) :=
+  exists (g : B -> A), (forall a, g (f a) = a).
+
+
 (* Permutations are bijections on an alphabet *)
 Definition bijective {A B : Type} (f : A -> B) :=
   injective f /\ surjective f.
@@ -113,8 +117,8 @@ Qed.
 
 
 Theorem left_inverse_injective :
-  forall (A B : Type) (f : A -> B),
-    (exists (g : B -> A), (forall a, g (f a) = a)) ->
+  forall {A B : Type} (f : A -> B),
+    left_inverse f ->
     injective f.
 Proof.
   intros A B f [g H].
@@ -127,4 +131,31 @@ Proof.
   rewrite H in Hfa.
   compute in Hfa.
   assumption.
+Qed.
+
+
+Theorem left_inverse_not_equal :
+  forall {A B : Type} (f : A -> B) (a b : A),
+    left_inverse f ->
+    a <> b ->
+    f a <> f b.
+Proof.
+  intros A B f a b [g Hinv] Hab.
+  unfold not in *.
+  intros Hfab.
+  apply Hab.
+  apply (f_equal g) in Hfab.
+  repeat rewrite Hinv in Hfab.
+  assumption.
+Qed.
+
+
+Theorem left_inverse_injective_on_domain :
+  forall {A B : Type} (f : A -> B) (g : B -> A),
+    (forall a, g (f a) = a) ->
+    forall a1 a2, g (f a1) = g (f a2) -> f a1 = f a2.
+Proof.
+  intros A B f g H a1 a2 Hgf.
+  repeat rewrite H in Hgf.
+  subst. reflexivity.
 Qed.

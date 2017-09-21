@@ -1,6 +1,8 @@
 Require Coq.Vectors.VectorDef.
 Require Coq.Vectors.Fin.
 Require Import List.
+Require Import bijections.
+
 
 Definition Vec := VectorDef.t.
 Definition Fin := Fin.t.
@@ -105,11 +107,11 @@ Definition wf_enigma (enigma : Enigma) : Prop :=
 
 
 Definition through_wheels (wheels : list Wheel) (a : Alpha) : Alpha :=
-  fold_right (fun w => in_map w) a (map wheel_map wheels).
+  fold_left (fun a w => in_map w a) (map wheel_map wheels) a.
 
 
 Definition out_wheels (wheels : list Wheel) (a : Alpha) : Alpha :=
-  fold_right (fun w => out_map w) a (rev (map wheel_map wheels)).
+  fold_left (fun a w => out_map w a) (rev (map wheel_map wheels)) a.
 
 
 (* Run a character through the circuit in the Enigma. This is like
@@ -125,7 +127,257 @@ Definition encipher (enigma : Enigma) (a : Alpha) : Alpha :=
   through_wheels all_wheels (
   in_map the_plugboard a)))).
 
-(* A letter can not be encoded as itself *)
+
+(* in_wheels and out_wheels are bijections *)
+Theorem out_through_wheels_inverse :
+  forall (ws : list Wheel),
+  Forall wf_wheel ws ->
+  forall a, through_wheels ws (out_wheels ws a) = a.
+Proof.
+  intros ws H a.
+  induction ws as [| w ws'].
+  - reflexivity.
+  - unfold through_wheels in *.
+    unfold out_wheels in *. simpl in *.
+    inversion H.
+    unfold wf_wheel in H2. unfold wf_bimap in H2.
+    pose proof (H2 (fold_left (fun (a0 : Alpha) (w0 : Bimap) => out_map w0 a0) (rev (map wheel_map ws')) a)) as [Hin Hout].
+    rewrite fold_left_app. simpl.
+
+    rewrite Hin.
+    apply IHws'.
+    assumption.
+Qed.
+
+
+Theorem rev_nil :
+  forall A (l : list A),
+  rev l = nil -> l = nil.
+Proof.
+  intros A l H.
+  destruct l.
+  - reflexivity.
+  - simpl in H.
+    pose proof (app_cons_not_nil (rev l) nil a) as Hnil.
+    unfold not in Hnil.
+    
+    exfalso.
+    apply Hnil.
+    symmetry.
+    assumption.
+Qed.
+
+
+Theorem forall_app :
+forall A (l1 l2 : list A) (P : A -> Prop),
+  Forall P l1 ->
+  Forall P l2 ->
+  Forall P (l1 ++ l2).
+Proof.
+  intros A l1 l2 P Hl1 Hl2.
+  induction Hl1.
+  - apply Hl2.
+  - simpl. apply Forall_cons; assumption.
+Qed.
+
+
+Theorem forall_rev :
+  forall A (l : list A) (P : A -> Prop),
+    Forall P l ->
+    Forall P (rev l).
+Proof.
+  intros A l P H.
+  induction H.
+  - apply Forall_nil.
+  - simpl. apply forall_app; auto.
+Qed.
+
+
+Theorem through_out_wheels_inverse :
+  forall (ws : list Wheel),
+  Forall wf_wheel ws ->
+  forall a, out_wheels ws (through_wheels ws a) = a.
+Proof.
+  intros ws H a.
+  induction ws as [| w ws'] using rev_ind.
+  - reflexivity.
+  - unfold through_wheels in *.
+    unfold out_wheels in *. simpl in *.
+
+    apply forall_rev in H.
+    rewrite rev_app_distr in H. simpl in H.
+    inversion H.
+
+    unfold wf_wheel in H2. unfold wf_bimap in H2.
+
+    rewrite <- map_rev. rewrite rev_app_distr. simpl.
+
+    rewrite map_app.
+    rewrite fold_left_app.
+    simpl.
+
+    pose proof (H2 (fold_left (fun (a0 : Alpha) (w0 : Bimap) => in_map w0 a0) (map wheel_map ws') a)) as [Hin Hout].
+
+    rewrite Hout.
+    rewrite map_rev.
+    apply IHws'.
+
+    apply forall_rev in H3.
+    rewrite rev_involutive in H3.
+    assumption.
+Qed.
+
+
+Theorem through_app :
+  forall (ws1 ws2 : list Wheel),
+  forall a, through_wheels (ws1 ++ ws2) a = through_wheels ws2 (through_wheels ws1 a).
+Proof.
+  induction ws1 as [| w' ws1'].
+  - reflexivity.
+  - intros ws2 b.
+    simpl in *.
+    unfold through_wheels in *.
+    simpl in *.
+    rewrite IHws1'.
+    reflexivity.
+Qed.
+
+
+Theorem through_wheels_left_inverse :
+  forall (ws : list Wheel),
+  Forall wf_wheel ws ->
+  left_inverse (through_wheels ws).
+Proof.
+  unfold left_inverse.
+  intros ws H.
+  exists (out_wheels ws).
+  apply through_out_wheels_inverse.
+  assumption.
+Qed.
+
+
+Theorem bimap_left_inverse :
+  forall (b : Bimap),
+  wf_bimap b ->
+  left_inverse (in_map b).
+Proof.
+  intros b H.
+  unfold left_inverse.
+  exists (out_map b). unfold wf_bimap in H. apply H.
+Qed.
+
+
+(* Going through the plugboard and then wheels is left invertible *)
+Theorem plugboard_through_wheels_left_inverse :
+  forall (ws : list Wheel) (the_plugboard : Plugboard),
+  wf_bimap the_plugboard ->
+  Forall wf_wheel ws ->
+  forall a, out_map the_plugboard (out_wheels ws (through_wheels ws (in_map the_plugboard a))) = a.
+Proof.
+  intros ws the_plugboard Hpb Hws a.
+  unfold wf_bimap in Hpb.
+
+  pose proof (through_out_wheels_inverse ws) as Hwinv.
+  apply Hwinv with (a:=(in_map the_plugboard a)) in Hws.
+  rewrite Hws.
+
+  apply Hpb.
+Qed.
+
+
+Theorem out_wheels_plugboard_left_inverse :
+  forall (ws : list Wheel) (the_plugboard : Plugboard),
+  wf_bimap the_plugboard ->
+  Forall wf_wheel ws ->
+  forall a, through_wheels ws (in_map the_plugboard (out_map the_plugboard (out_wheels ws a))) = a.
+Proof.
+  intros ws the_plugboard Hpb Hws a.
+  unfold wf_bimap in Hpb.
+
+  pose proof (out_through_wheels_inverse ws) as Hwinv.
+
+  pose proof Hpb (out_wheels ws a) as [Hin _].
+  rewrite Hin.
+
+  apply Hwinv.
+  assumption.
+Qed.
+
+
+Theorem left_inverse_disruption :
+  forall {A B : Type} (f : A -> B) (g : B -> A) (k : B -> B),
+  (forall a, g (f a) = a) ->
+  (forall b, f (g b) = b) ->
+  (forall b, k b <> b) ->
+  (forall a, g (k (f a)) <> a).
+Proof.
+  intros A B f g k Hgf Hfg Hkb a.
+  unfold not in *.
+  intros Hgkf.
+
+  apply Hkb with (b:=f a).
+  pose proof (left_inverse_injective g).
+  unfold injective in H.
+
+  apply H.
+  - unfold left_inverse.
+    exists f. assumption.
+  - rewrite Hgf.
+    assumption.
+Qed.
+
+
+(* A letter can not be encoded as itself.
+
+   Rough sketch of why this is true:
+
+   Since the reflector can not encode a letter as itself, the circuit
+   that the current originally came from can not be retraced, so we
+   can't get back to the original letter.
+
+   Sufficies to condense the rest of the enigma machine (everything
+   but the reflector) to a bijection.
+
+   Then since this is a bijection we can show that the well-formedness
+   property of the reflector, which insists that a value coming in is
+   encoded as a different value leads to a different value coming out
+   of the bijection.
+
+   You get a different value due to injectivity...
+
+   g (f a) = a
+
+   g is injective, so if I feed it b <> f a, then...
+
+   g (f a) <> g (b)
+
+ *)
+Theorem no_self_encoding :
+  forall (enigma : Enigma),
+  wf_enigma enigma ->
+  forall (a : Alpha), encipher enigma a <> a.
+Proof.
+  intros enigma [Hwf_ref [Hwf_plug [Hwf_wheels [Hwf_right Hwf_left]]]] a.
+  unfold encipher.
+  unfold wf_reflector in Hwf_ref.
+  destruct Hwf_ref as [Hbimap Hdiff].
+
+  set (all_wheels := right_static_wheels enigma ++ wheels enigma ++ left_static_wheels enigma) in *.
+  set (ref := reflector enigma) in *.
+  set (plug := plugboard enigma) in *.
+
+  apply (left_inverse_disruption (fun a => (through_wheels all_wheels (in_map plug a)))
+                                 (fun a => (out_map plug (out_wheels all_wheels a)))
+                                 (in_map (reflector enigma))).
+
+  - apply plugboard_through_wheels_left_inverse.
+    + assumption.
+    + repeat (apply forall_app; try assumption).
+  - apply out_wheels_plugboard_left_inverse.
+    + assumption.
+    + repeat (apply forall_app; try assumption).
+  - assumption.
+Qed.
 
 (* Enigma messages can be decoded *)
 
