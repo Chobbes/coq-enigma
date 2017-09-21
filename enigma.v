@@ -71,10 +71,13 @@ Definition wf_bimap (bimap : Bimap) : Prop :=
     in_map bimap (out_map bimap a) = a /\ out_map bimap (in_map bimap a) = a.
 
 
-(* A reflector can not map a letter to itself *)
+(* A reflector can not map a letter to itself, and
+   must be its own inverse
+*)
 Definition wf_reflector (bimap : Bimap) : Prop :=
   wf_bimap bimap /\
-  forall (a : Alpha), in_map bimap a <> a.
+  (forall (a : Alpha), in_map bimap a <> a) /\
+  (forall (a : Alpha), in_map bimap (in_map bimap a) = a).
 
 
 Definition wf_wheel (wheel : Wheel) : Prop :=
@@ -354,13 +357,13 @@ Qed.
  *)
 Theorem no_self_encoding :
   forall (enigma : Enigma),
-  wf_enigma enigma ->
-  forall (a : Alpha), encipher enigma a <> a.
+    wf_enigma enigma ->
+    forall (a : Alpha), encipher enigma a <> a.
 Proof.
   intros enigma [Hwf_ref [Hwf_plug [Hwf_wheels [Hwf_right Hwf_left]]]] a.
   unfold encipher.
   unfold wf_reflector in Hwf_ref.
-  destruct Hwf_ref as [Hbimap Hdiff].
+  destruct Hwf_ref as [Hbimap [Hdiff Hblah]].
 
   set (all_wheels := right_static_wheels enigma ++ wheels enigma ++ left_static_wheels enigma) in *.
   set (ref := reflector enigma) in *.
@@ -380,6 +383,40 @@ Proof.
 Qed.
 
 (* Enigma messages can be decoded *)
+Theorem enigma_decode :
+  forall (enigma : Enigma),
+    wf_enigma enigma ->
+    forall (a : Alpha), encipher enigma (encipher enigma a) = a.
+Proof.
+  intros enigma [Hwf_ref [Hwf_plug [Hwf_wheels [Hwf_right Hwf_left]]]] a.
+  unfold encipher.
+
+  set (all_wheels := right_static_wheels enigma ++ wheels enigma ++ left_static_wheels enigma) in *.
+  set (ref := reflector enigma) in *.
+  set (plug := plugboard enigma) in *.
+
+  unfold wf_bimap in Hwf_plug.
+
+  pose proof (Hwf_plug (out_wheels all_wheels (in_map ref (through_wheels all_wheels (in_map plug a))))) as [Hin Hout].
+
+  rewrite Hin.
+
+  rewrite out_through_wheels_inverse.
+  - unfold wf_reflector in Hwf_ref. destruct Hwf_ref as [Hrefbi [Hrefne Hrefinv]].
+    rewrite Hrefinv.
+    rewrite through_out_wheels_inverse.
+    + apply Hwf_plug.
+    + repeat (apply forall_app; try assumption).
+  - repeat (apply forall_app; try assumption).
+Qed.
+
+(* Need identical enigma machine to decipher (note: navy one was convertible...)
+
+   Restrict to same set of wheels and such. Same *type* of
+   enigma. Then you need identical settings for ALL messages. Some may
+   be decoded regardless, if short. E.g., two different settings may
+   map a -> k.
+*)
 
 (* Encryption is the same as decryption. E.g., A -> B means B -> A as
 well. Same as above more or less. *)
