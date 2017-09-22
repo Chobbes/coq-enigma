@@ -1,5 +1,6 @@
 Require Coq.Vectors.VectorDef.
 Require Coq.Vectors.Fin.
+Require Import Coq.Numbers.Natural.Peano.NPeano.
 Require Import List.
 Require Import bijections.
 
@@ -410,6 +411,29 @@ Proof.
   - repeat (apply forall_app; try assumption).
 Qed.
 
+
+Definition step_fin {n : nat} (f : Fin (S n)) : Fin (S n) :=
+  match (Fin.to_nat f) with
+  | exist _ i pf =>
+    match Compare_dec.lt_dec (S i) (S n) return Fin (S n) with
+    | left pf_lt => Fin.of_nat_lt pf_lt
+    | right pf_nlt => Fin.F1
+    end
+  end.
+
+
+Fixpoint step_wheels (ws : list Wheel) : list Wheel :=
+  match ws with
+  | nil => nil
+  | mkWheel m notches i :: ws' =>
+    let w' := mkWheel m notches (step_fin i) in
+    match in_dec Fin.eq_dec i notches with
+    | left pf_in => w' :: step_wheels ws'
+    | right pf_out => w' :: ws'
+    end
+  end.
+  
+
 (* Need identical enigma machine to decipher (note: navy one was convertible...)
 
    Restrict to same set of wheels and such. Same *type* of
@@ -418,11 +442,12 @@ Qed.
    map a -> k.
 *)
 
-(* Encryption is the same as decryption. E.g., A -> B means B -> A as
-well. Same as above more or less. *)
-
 (* Pressing the same key multiple times should lead to different
    letters due to wheel rotation.
+
+   Does it ever result in the same letter?
+
+   
  *)
 
 (* Enigma M4 and M3 / 1 equivalence *)
