@@ -422,17 +422,95 @@ Definition step_fin {n : nat} (f : Fin (S n)) : Fin (S n) :=
   end.
 
 
+Definition step_wheel (w : Wheel) : Wheel :=
+  match w with
+  | mkWheel m ns i => mkWheel m ns (step_fin i)
+  end.
+
+
+(* Step a wheel if the previous wheel has a notch in the correct position. *)
+Definition step_if_notched (prev : Wheel) (w : Wheel) : Wheel :=
+  match prev with
+  | mkWheel m notches i =>
+    if in_dec Fin.eq_dec i notches
+    then step_wheel w
+    else w
+  end.
+
+
+(* Step a wheel if the previous wheel has a notch in the correct
+   position, or the next wheel does. *)
+Definition double_step_if_notched (prev : Wheel) (next : Wheel) (w : Wheel) : Wheel :=
+  match prev with
+  | mkWheel _ notches i =>
+    if in_dec Fin.eq_dec i notches
+    then step_wheel w
+    else match next with
+         | mkWheel _ next_notches next_i =>
+           if in_dec Fin.eq_dec next_i next_notches
+           then step_wheel w
+           else w
+         end
+  end.
+
+
+(* Step the notched wheels without taking double stepping into account *)
+Fixpoint step_carry_wheels (prev : Wheel) (ws : list Wheel) : list Wheel :=
+  match ws with
+  | nil => nil
+  | w :: ws' =>
+    step_if_notched prev w :: step_carry_wheels w ws'
+  end.
+
+
+(* Step the notched wheels taking double stepping into account *)
+Fixpoint double_step_carry_wheels (prev : Wheel) (ws : list Wheel) : list Wheel :=
+  match ws with
+  | nil => nil
+  | w :: nil => step_if_notched prev w :: nil
+  | w :: next :: ws' =>
+    double_step_if_notched prev next w :: step_carry_wheels w ws'
+  end.
+
+
+(* 1) Step the first wheel always.
+   2) Step all wheel's whose previous wheel has a notch at the current
+      index.
+   3) If double stepping, then every wheel with a notch at the current
+      index must also step as well, unless it's the last wheel.
+ *)
 Fixpoint step_wheels (ws : list Wheel) : list Wheel :=
   match ws with
   | nil => nil
-  | mkWheel m notches i :: ws' =>
-    let w' := mkWheel m notches (step_fin i) in
-    match in_dec Fin.eq_dec i notches with
-    | left pf_in => w' :: step_wheels ws'
-    | right pf_out => w' :: ws'
-    end
+  | w :: ws' => step_wheel w :: step_carry_wheels w ws'
   end.
-  
+
+
+Fixpoint double_step_wheels (ws : list Wheel) : list Wheel :=
+  match ws with
+  | nil => nil
+  | w :: ws' => step_wheel w :: double_step_carry_wheels w ws'
+  end.
+
+
+Definition step_enigma (enigma : Enigma) : Enigma :=
+  match enigma with
+  | mkEnigma ref plug wheels right_ws left_ws double_step =>
+    if double_step
+    then let new_wheels := double_step_wheels wheels in
+         mkEnigma ref plug new_wheels right_ws left_ws double_step
+    else let new_wheels := step_wheels wheels in
+         mkEnigma ref plug new_wheels right_ws left_ws double_step
+  end.
+
+
+(* Press a key, causing the wheels to rotate, and a letter to light up.
+
+   Return the letter which lights up, and the new state of the enigma machine.
+*)
+Definition press_key (enigma : Enigma) (a : Alpha) : (Alpha * Enigma) :=
+  let enigma' := step_enigma enigma in (encipher enigma' a, enigma').
+
 
 (* Need identical enigma machine to decipher (note: navy one was convertible...)
 
@@ -445,8 +523,8 @@ Fixpoint step_wheels (ws : list Wheel) : list Wheel :=
 (* Pressing the same key multiple times should lead to different
    letters due to wheel rotation.
 
-   Does it ever result in the same letter?
-
+   Does it ever result in the same letter? It can if other wheels
+   turn.
    
  *)
 
