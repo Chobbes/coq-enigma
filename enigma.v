@@ -1,14 +1,13 @@
-Require Vectors.VectorDef.
-Require Vectors.Fin.
+Require Import Vector.
 Require Import Numbers.Natural.Peano.NPeano.
 Require Import Strings.String.
 Require Import Strings.Ascii.
+Require Import Program.
 Require Import List.
 Require Import bijections.
+Require Import alphabet.
+Require Import permutations.
 
-
-Definition Vec := VectorDef.t.
-Definition Fin := Fin.t.
 
 (* An enigma machine consists of some of the following:
 
@@ -33,7 +32,6 @@ We do need to invert these, since current is passed back through the
 wheels in the opposite direction.
 
  *)
-Definition Alpha := Fin 26.
 
 
 Definition Bimap := (Vec Alpha 26 * Vec Alpha 26)%type.
@@ -514,35 +512,6 @@ Definition press_key (enigma : Enigma) (a : Alpha) : (Alpha * Enigma) :=
   let enigma' := step_enigma enigma in (encipher enigma' a, enigma').
 
 
-Definition alpha_to_ascii (a : Alpha) : ascii :=
-  match Fin.to_nat a with
-  | exist _ a pf => ascii_of_nat ((nat_of_ascii "A") + a)
-  end.
-
-
-Definition ascii_to_alpha (a : ascii) : Alpha :=
-  match Compare_dec.lt_dec (nat_of_ascii a - nat_of_ascii "A") 26 with
-  | left pf_lt => Fin.of_nat_lt pf_lt
-  | right pf_ge => Fin.F1
-  end.
-
-
-Fixpoint string_to_alpha (str : string) : list Alpha :=
-  match str with
-  | EmptyString => nil
-  | String a str' => ascii_to_alpha a :: string_to_alpha str'
-  end.
-
-
-Definition alpha_to_string (alphas : list Alpha) : string :=
-  fold_left (fun str a => String (alpha_to_ascii a) str) (rev alphas) EmptyString.
-
-
-Example alpha_to_string_inverse_test :
-  alpha_to_string (string_to_alpha "HELLOWORLD") = "HELLOWORLD"%string.
-Proof. reflexivity. Qed.
-
-
 Fixpoint encipher_message (enigma : Enigma) (message : list Alpha) : (list Alpha) :=
     match message with
     | nil => nil
@@ -552,6 +521,96 @@ Fixpoint encipher_message (enigma : Enigma) (message : list Alpha) : (list Alpha
     end.
 
 
+Fixpoint vector_find {A} {n} (decA : forall x y : A, {x = y} + {x <> y}) (a : A) (vec : Vec A n) : option (Fin n) :=
+  match vec with
+  | VectorDef.nil _ => None
+  | VectorDef.cons _ x m t =>
+    if decA a x
+    then Some (Fin.F1)
+    else match vector_find decA a t with
+         | None => None
+         | Some f => Some (Fin.FS f)
+         end
+  end.
+
+
+Theorem vector_find_in_list :
+  forall A n (decA : forall x y : A, {x = y} + {x <> y}) (a : A) (vec : Vec A n),
+    VectorDef.In a vec ->
+    vector_find decA a vec <> None.
+Proof.
+  intros A n decA a vec H.
+  unfold not in *.
+  induction H.
+  - simpl. destruct decA.
+    + intros contra.
+      inversion contra.
+    + contradiction.
+  - simpl. destruct decA.
+    + intros contra. inversion contra.
+    + destruct (vector_find decA a v) eqn:bleh.
+      * intros H0. inversion H0.
+      * contradiction.
+Qed.
+
+
+Definition get_option {A} (a : A) (o : option A) : A :=
+  match o with
+  | None => a
+  | Some v => v
+  end.
+
+
+Definition Permutation := Vec Alpha 26.
+
+
+(* Want to find the position for each letter *)
+Fixpoint invert_permutation (perm : Permutation) : Permutation :=
+  VectorDef.map (fun a => get_option Fin.F1 ( vector_find Fin.eq_dec a perm)) alphabet.
+
+
+(* Transform a new alphabet into a well formed bimap. *)
+Definition mkBimap (permutation : Permutation) : Bimap :=
+  (permutation, invert_permutation permutation).
+
+
+(*
+Theorem wf_bimap_wf_bimap :
+  forall (perm : Permutation),
+    wf_permutation perm ->
+    wf_bimap (mkBimap perm).
+Proof.
+  intros perm H.
+  unfold wf_permutation in H.
+  unfold wf_bimap. unfold mkBimap.
+  intros a.
+
+  split.
+  - unfold Alpha in *. simpl.
+
+    (* Want to say that nth invert_perm a is (vector_find Fin.eq_dec a perm)
+
+       And since vector_find Fin.eq_dec a perm is just going to find
+       the occurance of 'a' in perm (which is guaranteed to be
+       unique), then nth perm (where-a-is) is going to be a.
+     *)
+Qed.
+
+
+Theorem wf_permutation_wf_bimap :
+  forall (perm : Vec Alpha 26),
+    wf_permutation perm ->
+    wf_bimap (mkBimap perm).
+Proof.
+  intros perm H.
+  unfold wf_permutation in H.
+  unfold wf_bimap.
+  intros a. split.
+  unfold out_map.
+  
+Qed.
+*)
+  
 (* Need identical enigma machine to decipher (note: navy one was convertible...)
 
    Restrict to same set of wheels and such. Same *type* of
