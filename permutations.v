@@ -3,6 +3,8 @@ Require Import Strings.String.
 Require Import Strings.Ascii.
 Require Import Program.
 Require Import alphabet.
+Require Import utils.
+
 
 (*
 Theorem all_in_alphabet :
@@ -18,8 +20,205 @@ Qed.
 
 Inductive NoDupVec {A : Type} : forall {n : nat}, Vec A n -> Prop :=
 | NoDupVec_nil : NoDupVec (nil A)
-| NoDupVec_cons : forall x m (v : Vec A m), ~ In x v -> NoDupVec v -> NoDupVec (cons _ x m v)
-.
+| NoDupVec_cons : forall x m (v : Vec A m), ~ In x v -> NoDupVec v -> NoDupVec (cons _ x m v).
+
+
+Definition summary := Vec nat 26.
+
+
+Definition empty_summary : summary :=
+  Vector.const 0 26.
+
+
+Definition increment_summary (a : Alpha) (s : summary) : summary :=
+  let v := S (nth s a) in replace s a v.
+
+
+Fixpoint summarize_vec {n : nat} (v : Vec Alpha n) : summary :=
+  match v with
+  | nil _ => empty_summary
+  | cons _ a n' t => increment_summary a (summarize_vec t)
+  end.
+
+
+Theorem summarize_nil :
+  summarize_vec (nil _) = empty_summary.
+Proof.
+  reflexivity.
+Qed.
+
+
+Theorem nth_cons :
+  forall {A n k e x} (v : Vec A n),
+    nth v k = e ->
+    nth (cons A x n v) (Fin.FS k) = e.
+Proof.
+  auto.
+Qed.
+
+
+Theorem replace_replaces :
+  forall {A n k e} (v : Vec A n),
+    nth (replace v k e) k = e.
+Proof.
+  intros A n k e v. induction v.
+  - inversion k.
+  - dependent destruction k.
+    + reflexivity.
+    + simpl. auto.
+Qed.
+
+
+Theorem nth_replace :
+  forall {A n j k e} (v : Vec A n),
+    j <> k ->
+    nth (replace v j e) k = nth v k.
+Proof.
+  intros A n j k. induction v.
+  - inversion j.
+  - dependent destruction k.
+    + dependent destruction j.
+      * contradiction.
+      * reflexivity.
+    + dependent destruction j.
+      * reflexivity.
+      * intros. simpl. apply IHv.
+        unfold not in *. intros Hjk.
+        apply H. rewrite Hjk. reflexivity.
+Qed.
+
+
+Theorem increment_summary_increments :
+  forall {k j} (s : summary),
+    nth s k = j ->
+    nth (increment_summary k s) k = S j.
+Proof.
+  intros k j s H.
+  unfold increment_summary.
+  rewrite replace_replaces.
+  auto.
+Qed.
+
+
+Theorem increment_summary_increments' :
+  forall {k} (s : summary),
+    nth (increment_summary k s) k = S (nth s k).
+Proof.
+  intros k s.
+  erewrite increment_summary_increments; reflexivity.
+Qed.
+
+
+Theorem summarize_empty :
+  forall k,
+    nth empty_summary k = 0.
+Proof.
+  intros k.
+  unfold empty_summary.
+  apply const_nth.
+Qed.
+
+
+Theorem increment_summary_greater :
+  forall {x k j} (s : summary),
+    nth s k = j ->
+    nth (increment_summary x s) k >= j.
+Proof.
+  intros x k j s.
+  unfold increment_summary.
+  intros Hnth.
+  destruct (Fin.eq_dec x k).
+  - rewrite e. rewrite replace_replaces.
+    subst. auto.
+  - rewrite nth_replace. rewrite Hnth.
+    + auto.
+    + assumption.
+Qed.
+
+
+Theorem increment_summary_neq :
+  forall {x k} (s : summary),
+    x <> k ->
+    nth (increment_summary x s) k = nth s k.
+Proof.
+  intros x k s H.
+  unfold increment_summary.
+  apply nth_replace.
+  assumption.
+Qed.
+
+
+Theorem summarize_cons :
+  forall {k n j} x (v : Vec Alpha n),
+    nth (summarize_vec v) k = j ->
+    nth (summarize_vec (cons _ x n v)) k >= j.
+Proof.
+  intros k n j x v H.
+  simpl. apply increment_summary_greater.
+  assumption.
+Qed.
+
+
+(*
+  By induction on v.
+
+  Nil case, empty summary can't have a value greater than 0.
+
+  Assume this holds for some v.
+
+  forall k, nth (summarize_vec v) k > 0 -> In k v.
+
+
+  We want to show that
+
+  nth (summarize_vec (h :: v) k) > 0 -> In k (h :: v)
+
+  If h = k, then we know that k is equal to S j for some j by
+  increment summary increments.
+
+  
+ *)
+Theorem in_summarize :
+  forall {k n} (v : Vec Alpha n),
+    nth (summarize_vec v) k > 0 ->
+    In k v.
+Proof.
+  intros k n v H.
+  generalize dependent k.
+  induction v.
+  - intros k H.
+    pose proof summarize_nil. rewrite H0 in H.
+    pose proof summarize_empty. rewrite H1 in H. inversion H.
+  - simpl. intros k H.
+    destruct (Fin.eq_dec h k); subst; constructor.
+    rewrite increment_summary_neq in H; auto.
+Qed.
+
+
+Theorem vec_0_is_nil :
+  forall {A} (v : Vec A 0),
+    v = nil A.
+Proof.
+  intros A v. unfold Vec in *.
+  refine (match v with
+          | nil _ => _
+          | cons _ x _ v => _
+          end).
+  reflexivity.
+  apply idProp.
+Qed.
+
+
+Theorem no_dup_summarize :
+  forall {n} (v : Vec Alpha n),
+    Forall (fun n => n < 2) (summarize_vec v) ->
+    NoDupVec v.
+Proof.
+  intros n v H.
+  induction v; constructor.
+  - admit.
+  - admit.
+Abort.
 
 
 Fixpoint in_vector {A : Type} {n : nat} (decA : forall x y : A, {x = y} + {x <> y}) (a : A) (v : Vec A n) : bool :=
@@ -83,20 +282,6 @@ Proof.
 Qed.
 
 
-Theorem vec_0_is_nil :
-  forall {A} (v : Vec A 0),
-    v = nil A.
-Proof.
-  intros A v. unfold Vec in *.
-  refine (match v with
-          | nil _ => _
-          | cons _ x _ v => _
-          end).
-  reflexivity.
-  apply idProp.
-Qed.
-
-
 Theorem Forall_hd :
   forall {A n h} (f : A -> Prop) (v : Vec A n),
     Forall f (cons _ h n v) ->
@@ -114,10 +299,9 @@ Theorem In_not_in_tl :
     x = h.
 Proof.
   intros A n x h v Hin Hnin.
-  inversion Hin.
+  invert_existT Hin.
   - reflexivity.
-  - apply inj_pair2 in H2. subst.
-    contradiction.
+  - contradiction.
 Qed.
 
 
@@ -129,9 +313,7 @@ Proof.
   intros A n f v Hall x Hin.
   induction Hall.
   - inversion Hin.
-  - inversion Hin.
-    + assumption.
-    + subst. apply inj_pair2 in H3. subst. auto.
+  - invert_existT Hin; auto.
 Qed.
 
 
@@ -188,20 +370,29 @@ Proof.
 Qed.    
 
 
-Theorem in_swap :
+Theorem in_cons_swap :
   forall {A n x y1 y2} (v : Vec A n),
     In x (cons A y1 (S n) (cons A y2 n v)) ->
     In x (cons A y2 (S n) (cons A y1 n v)).
 Proof.
   intros A n x y1 y2 v H.
-  inversion H.
+  invert_existT H.
   - repeat constructor.
-  - subst. apply inj_pair2 in H3. subst.
-    inversion H2.
-    + constructor.
-    + subst. apply inj_pair2 in H4. subst.
-      repeat constructor.
-      assumption.
+  - invert_existT H2; repeat constructor; auto.
+Qed.
+
+
+Theorem not_in_swap :
+  forall {A n x y} (v : Vec A n),
+    NoDupVec (cons A y n v) ->
+    ~ In x (cons A y n v) ->
+    ~ In y (cons A x n v).
+Proof.
+  unfold not.
+  intros A n x y v Hdup Hxy Hyx.
+  invert_existT Hyx.
+  - contradiction.
+  - invert_existT Hdup. contradiction.
 Qed.
 
 
@@ -214,20 +405,41 @@ Proof.
   intros A n x v1 v2 Hin Hperm.
   induction Hperm.
   - assumption.
-  - inversion Hin.
-    + apply In_cons_hd.
-    + subst. apply inj_pair2 in H2. subst. constructor. auto.
-  - inversion Hin.
+  - invert_existT Hin; constructor; auto.
+  - invert_existT Hin.
     + repeat constructor.
-    + subst. apply inj_pair2 in H2. subst.
-      apply in_swap.
-      assumption.
+    + apply in_cons_swap. assumption.
   - auto.
 Qed.
 
 
+Theorem not_in_perm :
+  forall {A n x} (v1 v2 : Vec A n),
+    ~ In x v1 ->
+    IsPermutation v1 v2 ->
+    ~ In x v2.
+Proof.
+  unfold not.
+  intros A n x v1 v2 Hnin Hperm Hin.
+  induction Hperm; auto.
+  - invert_existT Hin.
+    + apply Hnin. constructor.
+    + apply IHHperm; auto.
+      intros. apply Hnin.
+      constructor. apply H.
+  - invert_existT Hin; apply Hnin; apply in_cons_swap; auto.
+Qed.
 
-(*
+
+Theorem NoDupVec_weaken :
+  forall {A n x} (v : Vec A n),
+    NoDupVec (cons A x n v) ->
+    NoDupVec v.
+Proof.
+  intros A n x v H; invert_existT H; assumption.
+Qed.
+
+
 Theorem no_dup_perm :
   forall {A n} (v1 v2 : Vec A n),
     NoDupVec v1 ->
@@ -236,31 +448,16 @@ Theorem no_dup_perm :
 Proof.
   intros A n v1 v2 Hdup Hperm.
   induction Hperm.
-  - assumption.
-  - apply NoDupVec_cons. unfold not.
-    intros H.
-
+  - constructor.
+  - invert_existT Hdup.
+    constructor; pose proof not_in_perm v1 v2 H2; auto.
+  - invert_existT Hdup.
+    constructor.
+    + apply not_in_swap; assumption.
+    + apply NoDupVec_weaken in H3.
+      constructor.
+      * unfold not in *. intros. apply H2.
+        constructor. assumption.
+      * assumption.
+  - auto.
 Qed.
-
-
-Theorem wf_permutation_alphabet :
-  forall perm,
-    Forall (fun a => In a perm) alphabet ->
-    wf_permutation perm.
-Proof.
-  intros perm H. unfold wf_permutation.
-  inversion H.
-  
-Qed.
-
-Theorem wf_permutation_alphabet :
-  forall perm,
-    wf_permutation perm ->
-    Forall (fun a => In a perm) alphabet.
-Proof.
-  unfold wf_permutation.
-  intros perm H.
-  inversion H.
-  
-Qed.
-*)
