@@ -1,21 +1,10 @@
 Require Import Vector.
 Require Import Strings.String.
 Require Import Strings.Ascii.
+Require Import Coq.Setoids.Setoid.
 Require Import Program.
 Require Import alphabet.
 Require Import utils.
-
-
-(*
-Theorem all_in_alphabet :
-   forall (a : Alpha),
-    VectorDef.In a alphabet.
-Proof.
-  intros a.
-  unfold Alpha in *.
-  repeat (dependent destruction a; try apply VectorDef.In_cons_hd; apply VectorDef.In_cons_tl).
-Qed.
-*)
 
 
 Inductive NoDupVec {A : Type} : forall {n : nat}, Vec A n -> Prop :=
@@ -52,6 +41,14 @@ Theorem nth_cons :
   forall {A n k e x} (v : Vec A n),
     nth v k = e ->
     nth (cons A x n v) (Fin.FS k) = e.
+Proof.
+  auto.
+Qed.
+
+
+Theorem nth_cons' :
+  forall {A n k x} (v : Vec A n),
+    nth (cons A x n v) (Fin.FS k) = nth v k.
 Proof.
   auto.
 Qed.
@@ -136,6 +133,21 @@ Proof.
 Qed.
 
 
+Theorem increment_summary_greater_greater :
+  forall {x k j} (s : summary),
+    nth s k >= j ->
+    nth (increment_summary x s) k >= j.
+Proof.
+  intros x k j s.
+  unfold increment_summary.
+  intros Hnth.
+  destruct (Fin.eq_dec x k).
+  - rewrite e. rewrite replace_replaces.
+    subst. auto.
+  - rewrite nth_replace; auto.
+Qed.
+
+
 Theorem increment_summary_neq :
   forall {x k} (s : summary),
     x <> k ->
@@ -159,25 +171,6 @@ Proof.
 Qed.
 
 
-(*
-  By induction on v.
-
-  Nil case, empty summary can't have a value greater than 0.
-
-  Assume this holds for some v.
-
-  forall k, nth (summarize_vec v) k > 0 -> In k v.
-
-
-  We want to show that
-
-  nth (summarize_vec (h :: v) k) > 0 -> In k (h :: v)
-
-  If h = k, then we know that k is equal to S j for some j by
-  increment summary increments.
-
-  
- *)
 Theorem in_summarize :
   forall {k n} (v : Vec Alpha n),
     nth (summarize_vec v) k > 0 ->
@@ -195,6 +188,42 @@ Proof.
 Qed.
 
 
+Theorem summarize_in :
+  forall {k n} (v : Vec Alpha n),
+    In k v ->
+    nth (summarize_vec v) k > 0.
+Proof.
+  intros k n v H.
+  generalize dependent k.
+  induction v.
+  - intros k H. inversion H.
+  - simpl. intros k H.
+    destruct (Fin.eq_dec h k); subst.
+    + rewrite increment_summary_increments'. apply Gt.gt_Sn_O.
+    + invert_existT H; try contradiction.
+      apply IHv in H2.
+      inversion H2; apply increment_summary_greater_greater; auto.
+Qed.
+
+
+Theorem summarize_alphabet :
+  summarize_vec alphabet = Vector.const 1 26.
+Proof.
+  reflexivity.
+Qed.
+
+
+Theorem all_in_alphabet :
+   forall (a : Alpha),
+    In a alphabet.
+Proof.
+  intros a.
+  apply in_summarize.
+  rewrite summarize_alphabet.
+  rewrite const_nth. auto.
+Qed.
+
+
 Theorem vec_0_is_nil :
   forall {A} (v : Vec A 0),
     v = nil A.
@@ -209,16 +238,77 @@ Proof.
 Qed.
 
 
+Theorem Forall_nth :
+  forall {A n} (P : A -> Prop) (v : Vec A n),
+    Forall P v <->
+    forall k, P (nth v k).
+Proof.
+  intros A n P v.
+  split; intros H.
+  - intros k. induction H.
+    + inversion k.
+    + dependent induction k; simpl; auto.
+  - induction v; constructor.
+    + apply (H Fin.F1).
+    + apply IHv. intros k.
+      pose proof (H (Fin.FS k)) as Hnth.
+      rewrite nth_cons' in Hnth.
+      apply Hnth.
+Qed.
+
+
+Theorem no_dup_summary :
+  forall h (s : summary),
+    Forall (fun n : nat => n < 2) (increment_summary h s) ->
+    Forall (fun n : nat => n < 2) s.
+Proof.
+  intros h s H. unfold summary in *. unfold Vec in *.
+  unfold Alpha in *. unfold Fin in *.
+  rewrite Forall_nth in H.
+  rewrite Forall_nth.
+  intros k.
+  pose proof (H k) as Hk.
+  destruct (Fin.eq_dec h k).
+  - subst.
+    rewrite increment_summary_increments' in Hk.
+    apply PeanoNat.Nat.lt_succ_l in Hk. auto.
+  - pose proof(increment_summary_neq s n) as Hnth.
+    rewrite <- Hnth. auto.
+Qed.
+
+
+Theorem no_dup_summary_nth :
+  forall {n h} (v : Vec Alpha n),
+    Forall (fun n : nat => n < 2) (increment_summary h (summarize_vec v)) ->
+    nth (summarize_vec (cons _ h _ v)) h < 2.
+Proof.
+  intros n h v H.
+  simpl.
+  rewrite Forall_nth in H.
+  apply H.
+Qed.
+
+
 Theorem no_dup_summarize :
   forall {n} (v : Vec Alpha n),
     Forall (fun n => n < 2) (summarize_vec v) ->
     NoDupVec v.
 Proof.
   intros n v H.
-  induction v; constructor.
-  - admit.
-  - admit.
-Abort.
+  induction v; simpl in *; constructor.
+  - unfold not. intros Hin.
+    apply summarize_in in Hin.
+
+    pose proof H as Hnth.
+    apply no_dup_summary_nth in Hnth.
+    simpl in Hnth.
+    rewrite increment_summary_increments' in Hnth.
+    apply Lt.lt_S_n in Hnth. 
+    apply NPeano.Nat.lt_1_r in Hnth.
+    rewrite Hnth in Hin.
+    inversion Hin.
+  - apply IHv. eauto using no_dup_summary.
+Qed.
 
 
 Fixpoint in_vector {A : Type} {n : nat} (decA : forall x y : A, {x = y} + {x <> y}) (a : A) (v : Vec A n) : bool :=
@@ -253,11 +343,6 @@ Proof.
 Qed.
 
 
-(*
-Definition wf_permutation (perm : Vec Alpha 26) : Prop :=
-  VectorDef.Forall (fun a => VectorDef.In a perm) alphabet.
-*)
-
 Inductive IsPermutation {A} : forall {n}, Vec A n -> Vec A n -> Prop :=
 | permNil : IsPermutation (nil _) (nil _)
 | permSkip : forall {x m} (v1 : Vec A m) (v2 : Vec A m),
@@ -274,11 +359,17 @@ Definition wf_permutation (perm : Vec Alpha 26) : Prop :=
   IsPermutation perm alphabet.
 
 
-Theorem no_dup_alphabet :
+Theorem no_dup_alphabet' :
   NoDupVec alphabet.
 Proof.
-  repeat (apply NoDupVec_cons; try (unfold not; intros H; apply (In_in_vector Fin.eq_dec) in H; simpl in H; inversion H)).
-  apply NoDupVec_nil.
+  apply no_dup_summarize.
+  apply Forall_nth.
+  intros k.
+
+  rewrite summarize_alphabet.
+  rewrite const_nth.
+
+  auto.
 Qed.
 
 
