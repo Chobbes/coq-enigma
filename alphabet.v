@@ -48,3 +48,13 @@ Definition alphabet : Vec Alpha 26 :=
 Example alpha_to_string_inverse_test :
   alpha_to_string (string_to_alpha "HELLOWORLD") = "HELLOWORLD"%string.
 Proof. reflexivity. Qed.
+
+
+Definition step_fin {n : nat} (f : Fin (S n)) : Fin (S n) :=
+  match (Fin.to_nat f) with
+  | exist _ i pf =>
+    match Compare_dec.lt_dec (S i) (S n) return Fin (S n) with
+    | left pf_lt => Fin.of_nat_lt pf_lt
+    | right pf_nlt => Fin.F1
+    end
+  end.

@@ -7,6 +7,7 @@ Require Import List.
 Require Import bijections.
 Require Import alphabet.
 Require Import permutations.
+Require Import utils.
 
 
 (* An enigma machine consists of some of the following:
@@ -73,8 +74,8 @@ Definition wf_bimap (bimap : Bimap) : Prop :=
 
 
 (* A reflector can not map a letter to itself, and
-   must be its own inverse
-*)
+   must be its own inverse.
+ *)
 Definition wf_reflector (bimap : Bimap) : Prop :=
   wf_bimap bimap /\
   (forall (a : Alpha), in_map bimap a <> a) /\
@@ -101,7 +102,9 @@ Record Enigma : Type :=
     }.
 
 
-(* An enigma is well formed if the reflector is well formed, as are all the wheels, and the plugboard. *)
+(* An enigma is well formed if the reflector is well formed, as are
+   all the wheels, and the plugboard.
+ *)
 Definition wf_enigma (enigma : Enigma) : Prop :=
   wf_reflector (reflector enigma) /\
   wf_bimap (plugboard enigma) /\
@@ -412,16 +415,6 @@ Proof.
 Qed.
 
 
-Definition step_fin {n : nat} (f : Fin (S n)) : Fin (S n) :=
-  match (Fin.to_nat f) with
-  | exist _ i pf =>
-    match Compare_dec.lt_dec (S i) (S n) return Fin (S n) with
-    | left pf_lt => Fin.of_nat_lt pf_lt
-    | right pf_nlt => Fin.F1
-    end
-  end.
-
-
 Definition step_wheel (w : Wheel) : Wheel :=
   match w with
   | mkWheel m ns i => mkWheel m ns (step_fin i)
@@ -554,6 +547,34 @@ Proof.
 Qed.
 
 
+Theorem vector_find_in_list' :
+  forall {A n} (decA : forall x y : A, {x = y} + {x <> y}) (a : A) (vec : Vec A n),
+    VectorDef.In a vec ->
+    exists k, vector_find decA a vec = Some k.
+Proof.
+  intros A n decA a vec Hin.
+  induction Hin.
+  - simpl. destruct decA.
+    + exists Fin.F1. reflexivity.
+    + contradiction.
+  - simpl. destruct decA.
+    + exists Fin.F1. reflexivity.
+    + destruct IHHin. rewrite H.
+      exists (Fin.FS x0). reflexivity.
+Qed.
+
+
+Theorem vector_find_cons :
+  forall A n (decA : forall x y : A, {x = y} + {x <> y}) (a : A) (vec : Vec A n),
+    vector_find decA a (Vector.cons A a n vec) = Some Fin.F1.
+Proof.
+  intros A n decA a vec.
+  simpl. destruct decA.
+  - reflexivity.
+  - contradiction.
+Qed.
+
+
 Definition get_option {A} (a : A) (o : option A) : A :=
   match o with
   | None => a
@@ -569,12 +590,186 @@ Fixpoint invert_permutation (perm : Permutation) : Permutation :=
   VectorDef.map (fun a => get_option Fin.F1 ( vector_find Fin.eq_dec a perm)) alphabet.
 
 
+Theorem vector_nth_cons :
+  forall A n k (a x : A) (vec : Vec A n),
+    VectorDef.In a vec ->
+    Vector.nth vec k = a ->
+    Vector.nth (Vector.cons A x n vec) (Fin.FS k) = a.
+Proof.
+  auto.
+Qed.
+
+
+Theorem not_in_not_eq :
+  forall {A n} (a x : A) (vec : Vec A n),
+    VectorDef.In a vec ->
+    ~ VectorDef.In x vec ->
+    x <> a.
+Proof.
+  unfold not.
+  intros A n a x vec Hin Hnin Hxa.
+  invert_existT Hin; contradiction.
+Qed.
+
+
+Theorem match_madness :
+  forall n (o : option (Fin n)) k,
+    (match o with
+    | Some f => Some (Fin.FS f)
+    | None => None
+    end) = Some (Fin.FS k) ->
+    o = Some k.
+Proof.
+  intros n o k H.
+  induction o.
+  - invert_existT H. reflexivity.
+  - inversion H.
+Qed.
+
+
+Theorem vector_find_cons_neq_weaken :
+  forall {A n k} (decA : forall x y : A, {x = y} + {x <> y}) (a x : A) (vec : Vec A n),
+    VectorDef.In a vec ->
+    a <> x ->
+    vector_find decA a (Vector.cons A x n vec) = Some (Fin.FS k) ->
+    vector_find decA a vec = Some k.
+Proof.
+  intros A n k decA a x vec Hin Hnax Hfind.
+  induction Hin;
+  unfold vector_find in *; destruct decA;
+    try contradiction;
+    try (destruct decA;
+         try (invert_existT Hfind; reflexivity);
+         try (apply match_madness in Hfind; apply Hfind)).
+Qed.
+
+
+Theorem vector_find_cons_neq :
+  forall {A n} (decA : forall x y : A, {x = y} + {x <> y}) (a x : A) (vec : Vec A n),
+    VectorDef.In a vec ->
+    a <> x ->
+    exists k, vector_find decA a (Vector.cons A x n vec) = Some (Fin.FS k).
+Proof.
+  intros A n decA a x vec Hin Hneq.
+  induction vec.
+  - inversion Hin.
+  - invert_existT Hin.
+    + simpl. destruct decA.
+      * contradiction.
+      * destruct decA.
+        -- exists Fin.F1. reflexivity.
+        -- contradiction.
+    + simpl. destruct decA.
+      * contradiction.
+      * simpl in *. subst. apply IHvec in H1.
+        destruct decA.
+        -- contradiction.
+        -- destruct decA.
+           ++ subst. exists Fin.F1. reflexivity.
+           ++ destruct H1. rewrite H. exists (Fin.FS x0). reflexivity.
+Qed.
+
+
+Theorem neq_sym :
+  forall {A} (a x : A),
+    a <> x -> x <> a.
+Proof.
+  unfold not.
+  intros A a x Hax Hxa.
+  auto.
+Qed.
+
+
+Theorem find_inverse :
+  forall A n k (decA : forall x y : A, {x = y} + {x <> y}) (a : A) (vec : Vec A n),
+    VectorDef.In a vec ->
+    NoDupVec vec ->
+    vector_find decA a vec = Some k ->
+    Vector.nth vec k = a.
+Proof.
+  intros A n k decA a vec Hin Hdup Hfind.
+  generalize dependent k.
+  induction vec; intros k Hfind.
+  - inversion Hin.
+  - invert_existT Hin.
+    + unfold Fin in k. rewrite vector_find_cons in Hfind.
+      inversion Hfind.
+      reflexivity.
+    + invert_existT Hdup.
+      pose proof not_in_not_eq a h vec H1 H3.
+      apply neq_sym in H.
+      pose proof vector_find_cons_neq decA a h vec H1 H.
+      destruct H0. rewrite H0 in Hfind. inversion Hfind.
+      apply vector_nth_cons; auto.
+      apply IHvec; auto.
+      pose proof vector_find_in_list' decA a vec H1.
+      destruct H2.
+      subst.
+      apply (vector_find_cons_neq_weaken decA a h vec H1 H H0).
+Qed.
+
+Theorem tiny_alpha :
+  forall (perm : Vec (Fin 1) 1),
+    NoDupVec perm ->
+    IsPermutation perm (Vector.cons _ Fin.F1 0 (Vector.nil _)).
+Proof.
+  intros perm H. simpl.
+  repeat dependent destruction perm.
+  repeat match goal with
+  | H : NoDupVec ?v |- _ => invert_existT H
+  end.
+  econstructor. eauto.
+  simpl in *.
+  unfold not in *.
+  
+Qed.
+
+Theorem invert_permutation_is_permutatino :
+  forall (perm : Permutation),
+    NoDupVec perm ->
+    IsPermutation perm alphabet.
+Proof.
+  intros perm H.
+  repeat match goal with
+  | H : NoDupVec ?v |- _ => invert_existT H
+  end.
+  econstructor. econstructor.
+  econstructor. econstructor.
+  econstructor. econstructor.
+  econstructor. econstructor.
+  econstructor. econstructor.
+  econstructor. econstructor.
+  econstructor. econstructor.
+  econstructor. econstructor.
+  econstructor. econstructor.
+  econstructor. econstructor.
+  econstructor. econstructor.
+  econstructor. econstructor.
+  econstructor. econstructor.
+  econstructor. constructor.
+  
+
+  simpl in *. repeat econstructor; repeat eauto.
+  invert_existT H.
+  invert_existT H3.
+Qed.
+
+
+Theorem invert_permutation_left :
+  forall (perm : Permutation) (a b : Alpha),
+    Vector.nth perm a = b ->
+    Vector.nth (invert_permutation perm) b = a.
+Proof.
+  intros perm a b H.
+  unfold invert_permutation.
+Qed.
+
+
 (* Transform a new alphabet into a well formed bimap. *)
 Definition mkBimap (permutation : Permutation) : Bimap :=
   (permutation, invert_permutation permutation).
 
 
-(*
 Theorem wf_bimap_wf_bimap :
   forall (perm : Permutation),
     wf_permutation perm ->
@@ -583,6 +778,7 @@ Proof.
   intros perm H.
   unfold wf_permutation in H.
   unfold wf_bimap. unfold mkBimap.
+  simpl. unfold invert_permutation. simpl.
   intros a.
 
   split.
