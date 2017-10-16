@@ -5,6 +5,7 @@ Require Import Coq.Setoids.Setoid.
 Require Import Program.
 Require Import alphabet.
 Require Import utils.
+Require Import Omega.
 
 
 Inductive NoDupVec {A : Type} : forall {n : nat}, Vec A n -> Prop :=
@@ -311,6 +312,20 @@ Proof.
 Qed.
 
 
+Theorem no_dup_alphabet' :
+  NoDupVec alphabet.
+Proof.
+  apply no_dup_summarize.
+  apply Forall_nth.
+  intros k.
+
+  rewrite summarize_alphabet.
+  rewrite const_nth.
+
+  auto.
+Qed.
+
+
 Fixpoint in_vector {A : Type} {n : nat} (decA : forall x y : A, {x = y} + {x <> y}) (a : A) (v : Vec A n) : bool :=
   match v with
   | nil _ => false
@@ -355,22 +370,284 @@ Inductive IsPermutation {A} : forall {n}, Vec A n -> Vec A n -> Prop :=
 .
 
 
+Lemma incremented_summary_not_empty :
+  forall h (s : summary),
+    increment_summary h s <> empty_summary.
+Proof.
+  unfold not.
+  intros h s H.
+  pose proof eq_nth_iff nat 26.
+  rewrite <- H0 in H.
+  pose proof (H h h). rewrite increment_summary_increments' in H1. unfold empty_summary in H1.
+  rewrite const_nth in H1.
+  assert (h=h) by reflexivity.
+  apply H1 in H2.
+  inversion H2.
+Qed.
+
+
+Lemma summarize_empty_is_nil :
+  forall {n} (v : Vec Alpha n),
+    summarize_vec v = empty_summary ->
+    n = 0.
+Proof.
+  intros n v H. induction v; trivial.
+  simpl in *.
+  pose proof (incremented_summary_not_empty h (summarize_vec v)).
+  contradiction.
+Qed.
+
+
+Lemma increment_same :
+  forall h s1 s2,
+    increment_summary h s1 = increment_summary h s2 ->
+    s1 = s2.
+Proof.
+  intros h s1 s2 H.
+
+  apply eq_nth_iff.
+  intros x' x Hpp. subst.
+
+  pose proof H as Hnth.
+  apply (f_equal (fun s => nth s x)) in Hnth.
+
+  destruct (Fin.eq_dec h x).
+  - subst.
+    repeat rewrite increment_summary_increments' in Hnth.
+    inversion Hnth.
+    reflexivity.
+  - repeat (rewrite increment_summary_neq in Hnth; try assumption).
+Qed.
+
+
+Fixpoint summary_total {n} (s : Vec nat n) : nat :=
+  match s with
+  | nil _ => 0
+  | cons _ h _ s' => h + summary_total s'
+  end.
+
+
+Fixpoint cons_rep {A n} (a : A) (k : nat) (v : Vec A n) : Vec A (k + n) :=
+  match k with
+  | 0 => v
+  | S k' => cons _ a (k' + n) (cons_rep a k' v)
+  end.
+
+
+Fixpoint summary_to_vector_helper {n} (a : Alpha) (s : Vec nat n) : Vec Alpha (summary_total s) :=
+  match s as s' return (Vec Alpha (summary_total s')) with
+  | nil _ => nil _
+  | cons _ h _ t => cons_rep a h (summary_to_vector_helper (step_fin a) t)
+  end.
+
+
+Definition summary_to_vector {n} (s : Vec nat n) : Vec Alpha (summary_total s) := summary_to_vector_helper Fin.F1 s.
+
+
+Lemma summary_total_replace :
+  forall {n h} (v : Vec nat n),
+    summary_total (replace v h (S (nth v h))) = S (summary_total v).
+Proof.
+  intros n h v.
+  induction v as [| x n' v].
+  - inversion h.
+  - refine (match h as h' in Fin.t n
+                  return forall pf : n = S n',
+                         eq_rect n Fin h' (S n') pf = h ->
+                         summary_total (replace (VectorDef.cons nat x n' v) h (S (nth (VectorDef.cons nat x n' v) h))) = S (summary_total (VectorDef.cons nat x n' v)) with
+            | Fin.F1 => _
+            | Fin.FS h' => _
+            end eq_refl eq_refl); intros pf H; inversion pf; subst; repeat rewrite <- Eqdep_dec.eq_rect_eq_dec by apply eq_nat_dec; simpl.
+    + reflexivity.
+    + rewrite IHv. rewrite plus_n_Sm.
+      reflexivity.
+Qed.
+
+
+Lemma increment_summary_total :
+  forall {h} (s : summary),
+    summary_total (increment_summary h s) = S (summary_total s).
+Proof.
+  intros h s.
+  apply summary_total_replace.
+Qed.
+
+
+Lemma summarize_same_length :
+  forall {n} (v : Vec Alpha n),
+    summary_total (summarize_vec v) = n.
+Proof.
+  intros n v.
+  induction v.
+  - reflexivity.
+  - simpl. rewrite increment_summary_total. rewrite IHv.
+    reflexivity.
+Qed.
+
+
+Definition summarize_and_back {n} (v : Vec Alpha n) : Vec Alpha n.
+  pose proof summary_to_vector (summarize_vec v).
+  rewrite summarize_same_length in H.
+  apply H.
+Defined.
+
+
+Lemma summarize_and_back_nil :
+  summarize_and_back (nil _) = nil _.
+Proof.
+  unfold summarize_and_back. simpl.
+  unfold eq_rec.
+  rewrite <- Eqdep_dec.eq_rect_eq_dec by apply eq_nat_dec.
+  reflexivity.
+Qed.
+
+
+(*
+I have:
+
+H: summary_total (increment_summary h empty_summary) = 1
+
+
+Goal:
+
+eq_rect (summary_total (increment_summary h empty_summary)) (fun n : nat => Vec Alpha n)
+    (summary_to_vector (increment_summary h empty_summary)) 1
+    (summarize_same_length (cons (Fin 26) h 0 (nil (Fin 26))))
+
+Why can't I rewrite using H in the goal?
+
+eq_rect : forall {A : Type} (x : A) (P : A -> Type) (f : P x) (y : A) (e : x = y)
+
+In this case.... eq_rect x P f y e
+
+x = (summary_total (increment_summary h empty_summary))
+P = (fun n : nat => Vec Alpha n)
+f = (summary_to_vector (increment_summary h empty_summary))
+y = 1
+e = (summarize_same_length (cons (Fin 26) h 0 (nil (Fin 26))))
+
+summarize_same_length : forall {n : nat} (v : Vec (Fin.t 26) n), summary_total (summarize_vec v) = n
+ *)
+
+Lemma summarize_and_back_one :
+  forall h,
+    summarize_and_back (cons _ h _ (nil _)) = cons _ h _ (nil _).
+Proof.
+  intros h.
+  unfold Alpha in *.
+  dependent destruction h. compute. reflexivity.
+  
+  unfold summarize_and_back. simpl.
+  pose proof @increment_summary_total h empty_summary.
+  rewrite EqdepFacts.eq_sig_snd.
+  
+  unfold summarize_same_length.
+  unfold eq_rect. simpl.
+  
+Qed.
+
+Print summarize_and_back_one.
+
+Lemma bleh :
+  forall h n v,
+    IsPermutation (cons Alpha h n (summarize_and_back v)) (summarize_and_back (VectorDef.cons Alpha h n v)).
+Proof.
+  intros h n v.
+  induction v.
+  - rewrite summarize_and_back_nil.
+    unfold summarize_and_back. simpl.
+
+Qed.
+
+
+Lemma summary_is_perm :
+  forall {n} (v : Vec Alpha n),
+    IsPermutation v (summarize_and_back v).
+Proof.
+  intros n v.
+  induction v.
+  - unfold summarize_and_back. simpl. rewrite <- eq_rec_eq. constructor.
+  - econstructor.
+    + constructor. apply IHv.
+    + 
+                    
+Qed.
+
+
+(*
+Lemma permutation_extract :
+  forall {n} h (v : Vec Alpha (S n)),
+    In h v ->
+    exists v', IsPermutation (cons _ h n v') v.
+Proof.
+  dependent destruction v.
+  intros H.
+  destruct (Fin.eq_dec h h0).
+  - subst.
+    
+
+Qed.
+*)
+
+(*
+  by induction on v1...
+
+  If v1 is nil, then v2 must also be nil, since the have the same length. Thus
+  the condition holds, since IsPermutation nil nil is true.
+
+  Then we assume it works for some v1, and we want to show that it works for some
+  (h :: v1).
+
+  Thus we have summarize_vec (h :: v1) = summarize_vec v2, and
+  forall v2, summarize_vec v1 = summarize_vec v2 -> IsPermutation v1 v2
+
+  We want to show that:
+
+  IsPermutation (h :: v1) v2.
+
+  If we destruct v2, then we can have
+
+  IsPermutation (h :: v1) (h :: v2') which is just
+
+  IsPermutation v1 v2', so we can apply the induction hypothesis, and
+  then see that if we incremented h for the summary of v1 and v2 you
+  would get the same thing.
+
+  However, when you have x <> h...
+
+  IsPermutation (h :: v1) (x :: v2')
+
+  is much more difficult to show, since there isn't a constructor for
+  IsPermutation which immediately applies.
+
+  We want to show that h is in v2 (which is clear because v2's summary
+  equals h::v1's summary, which means h is in v2). And then knowing that we want to say that...
+
+  IsPermutation (h :: v2') v2
+
+  for some v2'
+*)
+Theorem summarize_permutation :
+  forall {n} (v1 v2 : Vec Alpha n),
+    summarize_vec v1 = summarize_vec v2 ->
+    IsPermutation v1 v2.
+Proof.
+  intros n v1 v2 H.
+  econstructor.
+  induction v1.
+  - simpl in H. pose proof vec_0_is_nil v2. subst.
+    constructor.
+  - simpl in H. dependent destruction v2. simpl in *.
+    induction (Fin.eq_dec h0 h).
+    + subst. constructor. apply IHv1.
+      apply (increment_same h). assumption.
+    + subst.
+
+Qed.
+
+
 Definition wf_permutation (perm : Vec Alpha 26) : Prop :=
   IsPermutation perm alphabet.
-
-
-Theorem no_dup_alphabet' :
-  NoDupVec alphabet.
-Proof.
-  apply no_dup_summarize.
-  apply Forall_nth.
-  intros k.
-
-  rewrite summarize_alphabet.
-  rewrite const_nth.
-
-  auto.
-Qed.
 
 
 Theorem Forall_hd :
@@ -486,7 +763,7 @@ Proof.
   - invert_existT Hdup. contradiction.
 Qed.
 
-
+v
 Theorem in_perm :
   forall {A n x} (v1 v2 : Vec A n),
     In x v1 ->
