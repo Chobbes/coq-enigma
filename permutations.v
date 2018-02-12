@@ -225,20 +225,6 @@ Proof.
 Qed.
 
 
-Theorem vec_0_is_nil :
-  forall {A} (v : Vec A 0),
-    v = nil A.
-Proof.
-  intros A v. unfold Vec in *.
-  refine (match v with
-          | nil _ => _
-          | cons _ x _ v => _
-          end).
-  reflexivity.
-  apply idProp.
-Qed.
-
-
 Theorem Forall_nth :
   forall {A n} (P : A -> Prop) (v : Vec A n),
     Forall P v <->
@@ -420,6 +406,21 @@ Proof.
 Qed.
 
 
+Lemma increment_empty :
+  forall a b,
+    increment_summary a empty_summary = increment_summary b empty_summary ->
+    a = b.
+Proof.
+  intros a b H.
+  unfold increment_summary in H. unfold empty_summary in H. repeat rewrite const_nth in H.
+
+  unfold Alpha in *.
+  repeat (try dependent destruction a; try dependent destruction b).
+  all: try reflexivity.
+  all: invert_existT H.
+Qed.
+
+
 Fixpoint summary_total {n} (s : Vec nat n) : nat :=
   match s with
   | nil _ => 0
@@ -528,14 +529,18 @@ e = (summarize_same_length (cons (Fin 26) h 0 (nil (Fin 26))))
 
 summarize_same_length : forall {n : nat} (v : Vec (Fin.t 26) n), summary_total (summarize_vec v) = n
  *)
-
 Lemma summarize_and_back_one :
   forall h,
     summarize_and_back (cons _ h _ (nil _)) = cons _ h _ (nil _).
 Proof.
   intros h.
   unfold Alpha in *.
-  dependent destruction h. compute. reflexivity.
+
+  dependent destruction h. compute. admit. dependent destruction h. compute.
+  
+  
+
+  summarize_same_length. reflexivity.
   
   unfold summarize_and_back. simpl.
   pose proof @increment_summary_total h empty_summary.
@@ -572,6 +577,7 @@ Proof.
     + 
                     
 Qed.
+*)
 
 
 (*
@@ -626,23 +632,82 @@ Qed.
   IsPermutation (h :: v2') v2
 
   for some v2'
-*)
+ *)
+
+Theorem permutation_refl :
+  forall {A n} (v : Vec A n),
+    IsPermutation v v.
+Proof.
+  intros A n v.
+  induction v; constructor; auto.
+Qed.
+
+
+
+
 Theorem summarize_permutation :
   forall {n} (v1 v2 : Vec Alpha n),
     summarize_vec v1 = summarize_vec v2 ->
     IsPermutation v1 v2.
 Proof.
   intros n v1 v2 H.
-  econstructor.
-  induction v1.
-  - simpl in H. pose proof vec_0_is_nil v2. subst.
+  induction v1. 
+  - nilify. constructor.
+  - dependent destruction v2. simpl in *. destruct (Fin.eq_dec h h0).
+    + subst. constructor. eauto using increment_same.
+    +
+      Lemma blah :
+        forall {n} h h0 (v1 v2 : Vec Alpha n),
+          h <> h0 ->
+          increment_summary h (summarize_vec v1) = increment_summary h0 (summarize_vec v2) ->
+          In h v2.
+      Proof.
+        intros n h h0 v1 v2 Hne Hinc.
+        induction v1.
+        - nilify. apply increment_empty in Hinc. contradiction.
+        - simpl in *. dependent destruction v2.
+          destruct (Fin.eq_dec h h2).
+          + subst. constructor.
+          + constructor. apply IHv1.
+            unfold increment_summary in *.
+            simpl in *.
+            apply eq_nth_iff. intros p1 p2 H. subst.
+            apply replace_replaces.
+
+
+
+          constructor
+          + simpl in *. 
+      Qed.
+        
+      econstructor.
+      * (* Want to show h :: v1 is a permutation of h :: h0 :: (v2 - h)
+
+           Which means we need to show that v1 is a permutation of h0 :: (v2 - h)
+         *)
+
+      (*
+        summarize_vec v1 <> summarize_vec v2, but we know...
+
+        nth h (summarize_vec v2) = nth h (increment_summary h (summarize_vec v1))
+        nth h0 (summarize_vec v1) = nth h0 (increment_summary h0 (summarize_vec v2))
+
+        Which means that v1 has the same amount of h0 in it, and v2
+        has the same amount of h in it...
+
+        So, we know that v1 - h0 is a permutation of v2 - h which
+        means that v1 is a permutation of h0 :: (v2 - h), which means that
+        h :: v1 is a permutation of h :: h0 :: (v2 - h).
+
+        h :: h0 :: (v2 - h) is a permutation of h0 :: v2
+       *)
+
+    +
+  - simpl in H. rewrite (vec_0_is_nil v2). pose proof vec_0_is_nil v2. subst.
     constructor.
   - simpl in H. dependent destruction v2. simpl in *.
-    induction (Fin.eq_dec h0 h).
-    + subst. constructor. apply IHv1.
-      apply (increment_same h). assumption.
-    + subst.
-
+    apply permutation_refl.
+  - 
 Qed.
 
 
